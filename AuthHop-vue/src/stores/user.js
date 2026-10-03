@@ -1,12 +1,11 @@
 import { defineStore } from 'pinia';
-import { supabase, isSupabaseConfigured, rpcErrorMessage } from '../api/supabase';
+import { requireSupabase, rpcErrorMessage, isSupabaseConfigured } from '../api/supabase';
 import { RPC } from '../api/queries';
 import {
-  assertDevicePasskey,
-  hasLocalPasskey,
-  isWebAuthnSupported,
-  clearStoredCredentialId,
-} from '../lib/webauthn';
+  clearLocalDevice,
+  getLocalDeviceProof,
+  hasLocalTrustedDevice,
+} from '../lib/deviceCrypto';
 
 const TOKEN_KEY = 'authhop-token';
 const USER_KEY = 'authhop-user';
@@ -29,9 +28,8 @@ export const useUserStore = defineStore('user', {
     user: loadUser(),
     loading: false,
     error: '',
-    webauthnSupported: isWebAuthnSupported(),
-    hasLocalPasskey: hasLocalPasskey(),
-    usingSupabase: isSupabaseConfigured,
+    hasTrustedDevice: hasLocalTrustedDevice(),
+    dbConfigured: isSupabaseConfigured,
   }),
   getters: {
     isAuthenticated: (state) => !!state.token && !!state.user,
@@ -39,9 +37,8 @@ export const useUserStore = defineStore('user', {
   },
   actions: {
     refreshFlags() {
-      this.webauthnSupported = isWebAuthnSupported();
-      this.hasLocalPasskey = hasLocalPasskey();
-      this.usingSupabase = isSupabaseConfigured;
+      this.hasTrustedDevice = hasLocalTrustedDevice();
+      this.dbConfigured = isSupabaseConfigured;
     },
     setSession(token, user) {
       this.token = token;
@@ -60,24 +57,14 @@ export const useUserStore = defineStore('user', {
       this.loading = true;
       this.error = '';
       try {
-        if (isSupabaseConfigured && supabase) {
-          const { data, error } = await supabase.rpc(RPC.register, {
-            p_email: email,
-            p_password: password,
-            p_display_name: displayName || null,
-          });
-          if (error) throw error;
-          this.setSession(data.token, data.user);
-          return true;
-        }
-
-        // Mock mode
-        const user = {
-          id: `mock-${Date.now()}`,
-          email,
-          display_name: displayName || email.split('@')[0],
-        };
-        this.setSession(`mock-token-${user.id}`, user);
+        const client = requireSupabase();
+        const { data, error } = await client.rpc(RPC.register, {
+          p_email: email,
+          p_password: password,
+          p_display_name: displayName || null,
+        });
+        if (error) throw error;
+        this.setSession(data.token, data.user);
         return true;
       } catch (error) {
         this.error = rpcErrorMessage(error);
@@ -91,22 +78,13 @@ export const useUserStore = defineStore('user', {
       this.loading = true;
       this.error = '';
       try {
-        if (isSupabaseConfigured && supabase) {
-          const { data, error } = await supabase.rpc(RPC.login, {
-            p_email: email,
-            p_password: password,
-          });
-          if (error) throw error;
-          this.setSession(data.token, data.user);
-          return true;
-        }
-
-        const user = {
-          id: 'mock-local-user',
-          email,
-          display_name: email.split('@')[0],
-        };
-        this.setSession('mock-token-local', user);
+        const client = requireSupabase();
+        const { data, error } = await client.rpc(RPC.login, {
+          p_email: email,
+          p_password: password,
+        });
+        if (error) throw error;
+        this.setSession(data.token, data.user);
         return true;
       } catch (error) {
         this.error = rpcErrorMessage(error);
@@ -117,40 +95,32 @@ export const useUserStore = defineStore('user', {
     },
 
     /**
-     * Try WebAuthn first. Only succeeds if a local passkey exists AND we already
-     * have (or can restore) a session. For cold start without a session token,
-     * WebAuthn proves device possession then we keep using the stored session
-     * if present; otherwise the UI falls back to login/register.
+     * Silent login using the local trusted-device secret (no biometrics).
      */
-    async tryWebAuthnUnlock() {
+    async tryTrustedDeviceLogin() {
       this.refreshFlags();
-      if (!this.webauthnSupported || !this.hasLocalPasskey) {
-        return false;
-      }
+      if (!this.hasTrustedDevice) return false;
 
       this.loading = true;
       this.error = '';
       try {
-        await assertDevicePasskey();
-
-        if (this.token && this.user) {
-          if (isSupabaseConfigured && supabase) {
-            const { data, error } = await supabase.rpc(RPC.me, { p_token: this.token });
-            if (error || !data) {
-              this.clearAuth();
-              return false;
-            }
-            this.user = data;
-            localStorage.setItem(USER_KEY, JSON.stringify(data));
-          }
-          return true;
+        const proof = await getLocalDeviceProof();
+        if (!proof) {
+          await clearLocalDevice();
+          this.hasTrustedDevice = false;
+          return false;
         }
 
-        // Passkey OK but no session — need password login once, then trust device
-        this.error = 'Passkey verified on this device. Sign in once to restore your session.';
-        return false;
+        const client = requireSupabase();
+        const { data, error } = await client.rpc(RPC.loginDevice, {
+          p_credential_id: proof.credentialId,
+          p_device_secret: proof.deviceSecret,
+        });
+        if (error) throw error;
+        this.setSession(data.token, data.user);
+        return true;
       } catch (error) {
-        this.error = error.message || 'Passkey authentication failed';
+        this.error = rpcErrorMessage(error);
         return false;
       } finally {
         this.loading = false;
@@ -159,10 +129,9 @@ export const useUserStore = defineStore('user', {
 
     async restoreSession() {
       if (!this.token) return false;
-      if (!isSupabaseConfigured || !supabase) return !!this.user;
-
       try {
-        const { data, error } = await supabase.rpc(RPC.me, { p_token: this.token });
+        const client = requireSupabase();
+        const { data, error } = await client.rpc(RPC.me, { p_token: this.token });
         if (error || !data) {
           this.clearAuth();
           return false;
@@ -170,22 +139,23 @@ export const useUserStore = defineStore('user', {
         this.user = data;
         localStorage.setItem(USER_KEY, JSON.stringify(data));
         return true;
-      } catch {
+      } catch (error) {
         this.clearAuth();
+        this.error = rpcErrorMessage(error);
         return false;
       }
     },
 
     async logout() {
-      if (isSupabaseConfigured && supabase && this.token) {
-        await supabase.rpc(RPC.logout, { p_token: this.token });
+      try {
+        if (this.token) {
+          const client = requireSupabase();
+          await client.rpc(RPC.logout, { p_token: this.token });
+        }
+      } catch {
+        /* still clear local session */
       }
       this.clearAuth();
-    },
-
-    forgetLocalPasskey() {
-      clearStoredCredentialId();
-      this.hasLocalPasskey = false;
     },
   },
 });

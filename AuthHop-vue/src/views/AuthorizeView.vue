@@ -2,8 +2,7 @@
   <section class="page-card">
     <h1 class="section-title">Authorize {{ request?.site_id || 'site' }}</h1>
     <p class="subtitle">
-      A relying party wants to sign you in with AuthHop. This only succeeds if
-      <strong>this device is trusted</strong> and you complete WebAuthn.
+      A site wants to sign you in with AuthHop. This succeeds automatically when this browser is a trusted device.
     </p>
 
     <div v-if="loading && !request" class="empty-state">Loading request…</div>
@@ -29,19 +28,18 @@
 
     <div class="toolbar">
       <button class="cta-button" type="button" :disabled="loading || request?.status !== 'pending'" @click="approve">
-        {{ loading ? 'Verifying device…' : 'Authenticate with this trusted device' }}
+        {{ loading ? 'Authenticating…' : 'Continue' }}
       </button>
       <router-link class="ghost-button" to="/devices">Manage trusted devices</router-link>
       <button class="ghost-button danger" type="button" @click="deny">Deny</button>
     </div>
 
     <div v-if="error" class="alert alert-danger">{{ error }}</div>
-    <div v-if="hint" class="alert alert-info">{{ hint }}</div>
   </section>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { useSsoStore } from '../stores/sso';
@@ -50,7 +48,6 @@ const route = useRoute();
 const router = useRouter();
 const ssoStore = useSsoStore();
 const { request, loading, error } = storeToRefs(ssoStore);
-const hint = ref('');
 
 const requestId = computed(() => {
   const value = route.query.request_id || route.query.requestId;
@@ -70,13 +67,11 @@ const redirectBack = (extra = {}) => {
 };
 
 const approve = async () => {
-  hint.value = '';
   try {
     const result = await ssoStore.approveWithTrustedDevice();
     redirectBack({ code: result.code, state: result.state });
-  } catch (err) {
-    hint.value =
-      'If this device is not enrolled yet, open Trusted Devices → Add this as a trusted device, then try again.';
+  } catch {
+    /* error on store */
   }
 };
 
@@ -90,12 +85,10 @@ onMounted(async () => {
     return;
   }
   try {
-    await ssoStore.loadRequest(requestId.value, {
-      siteId: typeof route.query.mock_site_id === 'string' ? route.query.mock_site_id : '',
-      redirectUri:
-        typeof route.query.mock_redirect_uri === 'string' ? route.query.mock_redirect_uri : '',
-      state: typeof route.query.mock_state === 'string' ? route.query.mock_state : '',
-    });
+    await ssoStore.loadRequest(requestId.value);
+    if (ssoStore.request?.status === 'pending') {
+      await approve();
+    }
   } catch {
     /* error already on store */
   }
