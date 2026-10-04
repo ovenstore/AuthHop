@@ -1,31 +1,14 @@
 import { defineStore } from 'pinia';
-import { supabase, isSupabaseConfigured, rpcErrorMessage } from '../api/supabase';
+import { requireSupabase, rpcErrorMessage } from '../api/supabase';
 import { RPC } from '../api/queries';
-import { registerDevicePasskey } from '../lib/webauthn';
+import { enrollLocalDevice, clearLocalDevice, getLocalDeviceMeta } from '../lib/deviceCrypto';
 import { useUserStore } from './user';
-
-const LOCAL_DEVICES_KEY = 'authhop-local-devices';
-
-function loadLocalDevices() {
-  try {
-    const raw = localStorage.getItem(LOCAL_DEVICES_KEY);
-    if (raw) return JSON.parse(raw);
-  } catch {
-    /* ignore */
-  }
-  return [];
-}
-
-function saveLocalDevices(devices) {
-  localStorage.setItem(LOCAL_DEVICES_KEY, JSON.stringify(devices));
-}
 
 export const useDevicesStore = defineStore('devices', {
   state: () => ({
     devices: [],
     loading: false,
     error: '',
-    usingMock: !isSupabaseConfigured,
   }),
   actions: {
     async fetchDevices() {
@@ -33,33 +16,28 @@ export const useDevicesStore = defineStore('devices', {
       this.loading = true;
       this.error = '';
       try {
-        if (isSupabaseConfigured && supabase && userStore.token) {
-          const { data, error } = await supabase.rpc(RPC.listDevices, {
-            p_token: userStore.token,
-          });
-          if (error) throw error;
-          this.devices = data || [];
-          this.usingMock = false;
-          return;
-        }
-
-        this.devices = loadLocalDevices().filter((d) => !d.revoked_at);
-        this.usingMock = true;
+        if (!userStore.token) throw new Error('Sign in first');
+        const client = requireSupabase();
+        const { data, error } = await client.rpc(RPC.listDevices, {
+          p_token: userStore.token,
+        });
+        if (error) throw error;
+        this.devices = data || [];
       } catch (error) {
         this.error = rpcErrorMessage(error);
-        this.devices = loadLocalDevices().filter((d) => !d.revoked_at);
-        this.usingMock = true;
+        this.devices = [];
       } finally {
         this.loading = false;
       }
     },
 
     /**
-     * Enroll THIS browser/device only: WebAuthn create → store credential.
+     * Enroll THIS browser: Web Crypto key + device secret → Supabase.
+     * No passkey / fingerprint prompt.
      */
     async addThisAsTrustedDevice(deviceName) {
       const userStore = useUserStore();
-      if (!userStore.user) throw new Error('Sign in first');
+      if (!userStore.user || !userStore.token) throw new Error('Sign in first');
 
       const name = deviceName.trim();
       if (!name) throw new Error('Device name is required');
@@ -67,44 +45,25 @@ export const useDevicesStore = defineStore('devices', {
       this.loading = true;
       this.error = '';
       try {
-        const passkey = await registerDevicePasskey({
-          userId: userStore.user.id,
-          userName: userStore.user.email,
-          displayName: userStore.displayName,
+        const enrolled = await enrollLocalDevice();
+        const client = requireSupabase();
+        const { data, error } = await client.rpc(RPC.addTrustedDevice, {
+          p_token: userStore.token,
+          p_device_name: name,
+          p_credential_id: enrolled.credentialId,
+          p_public_key: enrolled.publicKey,
+          p_device_secret: enrolled.deviceSecret,
         });
-        userStore.refreshFlags();
-
-        if (isSupabaseConfigured && supabase && userStore.token) {
-          const { data, error } = await supabase.rpc(RPC.addTrustedDevice, {
-            p_token: userStore.token,
-            p_device_name: name,
-            p_credential_id: passkey.credentialId,
-            p_public_key: passkey.publicKey,
-          });
-          if (error) throw error;
-          this.devices = [data, ...this.devices];
-          this.usingMock = false;
-          return data;
+        if (error) {
+          await clearLocalDevice();
+          throw error;
         }
-
-        const device = {
-          id: `dev-${Date.now()}`,
-          device_name: name,
-          credential_id: passkey.credentialId,
-          public_key: passkey.publicKey,
-          created_at: new Date().toISOString(),
-          last_seen_at: new Date().toISOString(),
-          revoked_at: null,
-        };
-        const all = loadLocalDevices();
-        all.unshift(device);
-        saveLocalDevices(all);
-        this.devices = all.filter((d) => !d.revoked_at);
-        this.usingMock = true;
-        return device;
+        this.devices = [data, ...this.devices];
+        userStore.refreshFlags();
+        return data;
       } catch (error) {
-        this.error = error.message || rpcErrorMessage(error);
-        throw error;
+        this.error = rpcErrorMessage(error);
+        throw new Error(this.error);
       } finally {
         this.loading = false;
       }
@@ -121,25 +80,24 @@ export const useDevicesStore = defineStore('devices', {
       this.loading = true;
       this.error = '';
       try {
-        if (isSupabaseConfigured && supabase && userStore.token) {
-          const { error } = await supabase.rpc(RPC.revokeTrustedDevice, {
-            p_token: userStore.token,
-            p_device_id: deviceId,
-            p_confirm_name: confirmationName.trim(),
-          });
-          if (error) throw error;
-          this.devices = this.devices.filter((d) => d.id !== deviceId);
-          return;
+        const client = requireSupabase();
+        const { error } = await client.rpc(RPC.revokeTrustedDevice, {
+          p_token: userStore.token,
+          p_device_id: deviceId,
+          p_confirm_name: confirmationName.trim(),
+        });
+        if (error) throw error;
+
+        const meta = getLocalDeviceMeta();
+        if (meta?.credentialId && meta.credentialId === device.credential_id) {
+          await clearLocalDevice();
+          userStore.refreshFlags();
         }
 
-        const all = loadLocalDevices().map((d) =>
-          d.id === deviceId ? { ...d, revoked_at: new Date().toISOString() } : d
-        );
-        saveLocalDevices(all);
-        this.devices = all.filter((d) => !d.revoked_at);
+        this.devices = this.devices.filter((d) => d.id !== deviceId);
       } catch (error) {
-        this.error = error.message || rpcErrorMessage(error);
-        throw error;
+        this.error = rpcErrorMessage(error);
+        throw new Error(this.error);
       } finally {
         this.loading = false;
       }

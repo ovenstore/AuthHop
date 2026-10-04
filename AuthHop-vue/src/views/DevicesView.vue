@@ -2,21 +2,19 @@
   <section class="page-card">
     <h1 class="section-title">Trusted Devices</h1>
     <p class="subtitle">
-      Only enroll the device you are using right now. Enrollment creates a WebAuthn passkey used when
-      other sites ask AuthHop to authenticate you.
-      {{ usingMock ? ' (local mock data)' : '' }}
+      Enroll the browser you are using now. AuthHop stores a cryptographic key in this browser so later
+      visits and site logins can succeed automatically on this device.
     </p>
 
     <div class="toolbar">
       <button class="cta-button" type="button" @click="openAdd">Add this as a trusted device</button>
-      <span v-if="userStore.hasLocalPasskey" class="badge">
+      <span v-if="userStore.hasTrustedDevice" class="badge">
         <span class="status-dot"></span>
-        Passkey on this browser
+        This browser is enrolled
       </span>
     </div>
 
     <div v-if="error" class="alert alert-danger">{{ error }}</div>
-    <div v-if="promptError && prompt !== 'add' && prompt !== 'remove'" class="alert alert-danger">{{ promptError }}</div>
 
     <div v-if="loading && !devices.length" class="empty-state">Loading devices…</div>
     <div v-else-if="!devices.length" class="empty-state">
@@ -49,7 +47,7 @@
     <DeviceNamePrompt
       v-if="prompt === 'add'"
       title="Add this as a trusted device"
-      message="Name this device. Your browser will prompt you to create a passkey — that passkey is what AuthHop will require for SSO."
+      message="Name this device. A cryptographic key will be created in this browser — no fingerprint or passkey prompt."
       confirm-label="Enroll this device"
       :error="promptError"
       @confirm="confirmAdd"
@@ -80,7 +78,7 @@ import { useUserStore } from '../stores/user';
 
 const devicesStore = useDevicesStore();
 const userStore = useUserStore();
-const { devices, loading, error, usingMock } = storeToRefs(devicesStore);
+const { devices, loading, error } = storeToRefs(devicesStore);
 
 const prompt = ref(null);
 const pendingDevice = ref(null);

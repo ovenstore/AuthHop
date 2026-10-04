@@ -2,8 +2,7 @@
   <section class="page-card">
     <h1 class="section-title">Recent Authentications</h1>
     <p class="subtitle">
-      Times AuthHop approved (or denied) sign-in for relying parties, with IP and geo location.
-      {{ usingMock ? 'Mock IPs + live geo-IP.' : 'From authentication_events.' }}
+      Times AuthHop approved or denied sign-in for relying parties, with IP and location.
     </p>
 
     <div class="toolbar">
@@ -49,7 +48,7 @@ import { storeToRefs } from 'pinia';
 import { useAuthHistoryStore } from '../stores/authHistory';
 
 const authHistoryStore = useAuthHistoryStore();
-const { events, loading, error, usingMock } = storeToRefs(authHistoryStore);
+const { events, loading, error } = storeToRefs(authHistoryStore);
 const formatDate = (value) => (value ? new Date(value).toLocaleString() : '—');
 
 onMounted(() => authHistoryStore.fetchHistory());

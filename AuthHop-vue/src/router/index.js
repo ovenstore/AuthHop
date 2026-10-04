@@ -28,17 +28,19 @@ router.beforeEach(async (to, from, next) => {
 
   if (!bootstrapped) {
     bootstrapped = true;
-    // Prefer WebAuthn unlock when a local passkey + session exist
-    if (userStore.webauthnSupported && userStore.hasLocalPasskey && userStore.token) {
-      await userStore.tryWebAuthnUnlock();
-    } else if (userStore.token) {
-      await userStore.restoreSession();
+    if (userStore.token) {
+      const ok = await userStore.restoreSession();
+      if (!ok && userStore.hasTrustedDevice) {
+        await userStore.tryTrustedDeviceLogin();
+      }
+    } else if (userStore.hasTrustedDevice) {
+      await userStore.tryTrustedDeviceLogin();
     }
   }
 
   if (to.meta.auth && !userStore.isAuthenticated) {
-    if (userStore.webauthnSupported && userStore.hasLocalPasskey && userStore.token) {
-      const ok = await userStore.tryWebAuthnUnlock();
+    if (userStore.hasTrustedDevice) {
+      const ok = await userStore.tryTrustedDeviceLogin();
       if (ok) return next();
     }
     return next({

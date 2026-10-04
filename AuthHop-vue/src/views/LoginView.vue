@@ -6,25 +6,14 @@
     </div>
 
     <p class="subtitle">
-      AuthHop checks for a passkey on this device first. If none is available, use email and password.
+      If this browser is a trusted device, you are signed in automatically. Otherwise use email and password.
     </p>
 
-    <div v-if="webauthnSupported && hasLocalPasskey" class="toolbar">
-      <button class="cta-button" type="button" :disabled="loading" @click="unlockWithPasskey">
-        {{ loading ? 'Waiting for passkey…' : 'Continue with passkey' }}
-      </button>
-      <button class="ghost-button" type="button" @click="showPassword = true">Use password</button>
+    <div v-if="loading && hasTrustedDevice" class="alert alert-info">
+      Signing in with this trusted device…
     </div>
 
-    <div v-else-if="webauthnSupported" class="alert alert-info">
-      No passkey on this browser yet. Sign in, then use
-      <strong>Add this as a trusted device</strong> to enroll WebAuthn here.
-    </div>
-
-    <div v-else class="alert alert-info">WebAuthn unavailable — use email and password.</div>
-
-    <form v-if="showPassword || !hasLocalPasskey || !webauthnSupported" @submit.prevent="submit">
-      <div v-if="hasLocalPasskey && webauthnSupported" class="login-divider">or</div>
+    <form v-else @submit.prevent="submit">
       <div class="form-field">
         <label for="email">Email</label>
         <input id="email" v-model="form.email" type="email" autocomplete="username" required />
@@ -44,35 +33,25 @@
     </form>
 
     <div v-if="error" class="alert alert-danger">{{ error }}</div>
-    <p class="subtitle" style="margin-top: 1.25rem; margin-bottom: 0; font-size: 0.85rem">
-      {{ usingSupabase ? 'Supabase connected.' : 'Mock mode — set VITE_SUPABASE_* in .env' }}
-    </p>
   </section>
 </template>
 
 <script setup>
-import { onMounted, reactive, ref } from 'vue';
+import { onMounted, reactive } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { storeToRefs } from 'pinia';
 import { useUserStore } from '../stores/user';
 
 const userStore = useUserStore();
-const { loading, error, webauthnSupported, hasLocalPasskey, usingSupabase } = storeToRefs(userStore);
+const { loading, error, hasTrustedDevice } = storeToRefs(userStore);
 const router = useRouter();
 const route = useRoute();
 
 const form = reactive({ email: '', password: '' });
-const showPassword = ref(!(webauthnSupported.value && hasLocalPasskey.value));
 
 const goNext = () => {
   const redirect = typeof route.query.redirect === 'string' ? route.query.redirect : '/devices';
   router.push(redirect);
-};
-
-const unlockWithPasskey = async () => {
-  const ok = await userStore.tryWebAuthnUnlock();
-  if (ok) goNext();
-  else showPassword.value = true;
 };
 
 const submit = async () => {
@@ -84,9 +63,13 @@ const submit = async () => {
 };
 
 onMounted(async () => {
-  if (webauthnSupported.value && hasLocalPasskey.value && userStore.token) {
-    showPassword.value = false;
-    await unlockWithPasskey();
+  if (userStore.isAuthenticated) {
+    goNext();
+    return;
+  }
+  if (hasTrustedDevice.value) {
+    const ok = await userStore.tryTrustedDeviceLogin();
+    if (ok) goNext();
   }
 });
 </script>

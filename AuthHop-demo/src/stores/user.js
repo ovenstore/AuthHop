@@ -1,7 +1,6 @@
 import { defineStore } from 'pinia';
 import {
-  supabase,
-  isSupabaseConfigured,
+  requireSupabase,
   rpcErrorMessage,
   AUTHHOP_URL,
   DEMO_URL,
@@ -34,7 +33,6 @@ export const useDemoUserStore = defineStore('demoUser', {
     user: loadUser(),
     loading: false,
     error: '',
-    usingSupabase: isSupabaseConfigured,
   }),
   getters: {
     isAuthenticated: (state) => !!state.token && !!state.user,
@@ -59,23 +57,14 @@ export const useDemoUserStore = defineStore('demoUser', {
       this.loading = true;
       this.error = '';
       try {
-        if (isSupabaseConfigured && supabase) {
-          const { data, error } = await supabase.rpc('demo_register', {
-            p_email: email,
-            p_password: password,
-            p_display_name: displayName || null,
-          });
-          if (error) throw error;
-          this.setSession(data.token, data.user);
-          return true;
-        }
-        const user = {
-          id: `demo-${Date.now()}`,
-          email,
-          display_name: displayName || email.split('@')[0],
-          authhop_user_id: null,
-        };
-        this.setSession(`demo-token-${user.id}`, user);
+        const client = requireSupabase();
+        const { data, error } = await client.rpc('demo_register', {
+          p_email: email,
+          p_password: password,
+          p_display_name: displayName || null,
+        });
+        if (error) throw error;
+        this.setSession(data.token, data.user);
         return true;
       } catch (error) {
         this.error = rpcErrorMessage(error);
@@ -89,22 +78,13 @@ export const useDemoUserStore = defineStore('demoUser', {
       this.loading = true;
       this.error = '';
       try {
-        if (isSupabaseConfigured && supabase) {
-          const { data, error } = await supabase.rpc('demo_login', {
-            p_email: email,
-            p_password: password,
-          });
-          if (error) throw error;
-          this.setSession(data.token, data.user);
-          return true;
-        }
-        const user = {
-          id: 'demo-local',
-          email,
-          display_name: email.split('@')[0],
-          authhop_user_id: null,
-        };
-        this.setSession('demo-token-local', user);
+        const client = requireSupabase();
+        const { data, error } = await client.rpc('demo_login', {
+          p_email: email,
+          p_password: password,
+        });
+        if (error) throw error;
+        this.setSession(data.token, data.user);
         return true;
       } catch (error) {
         this.error = rpcErrorMessage(error);
@@ -116,9 +96,9 @@ export const useDemoUserStore = defineStore('demoUser', {
 
     async restoreSession() {
       if (!this.token) return false;
-      if (!isSupabaseConfigured || !supabase) return !!this.user;
       try {
-        const { data, error } = await supabase.rpc('demo_me', { p_token: this.token });
+        const client = requireSupabase();
+        const { data, error } = await client.rpc('demo_me', { p_token: this.token });
         if (error || !data) {
           this.clearAuth();
           return false;
@@ -126,64 +106,42 @@ export const useDemoUserStore = defineStore('demoUser', {
         this.user = data;
         localStorage.setItem(USER_KEY, JSON.stringify(data));
         return true;
-      } catch {
+      } catch (error) {
         this.clearAuth();
+        this.error = rpcErrorMessage(error);
         return false;
       }
     },
 
     async logout() {
-      if (isSupabaseConfigured && supabase && this.token) {
-        await supabase.rpc('demo_logout', { p_token: this.token });
+      try {
+        if (this.token) {
+          const client = requireSupabase();
+          await client.rpc('demo_logout', { p_token: this.token });
+        }
+      } catch {
+        /* still clear local */
       }
       this.clearAuth();
     },
 
-    /**
-     * Start AuthHop SSO: create sso_requests row, redirect to AuthHop /authorize.
-     */
     async startAuthHopLogin() {
       this.loading = true;
       this.error = '';
       try {
+        const client = requireSupabase();
         const state = randomState();
         const redirectUri = `${DEMO_URL}/auth/callback`;
-
-        if (isSupabaseConfigured && supabase) {
-          const { data, error } = await supabase.rpc('sso_create_request', {
-            p_site_id: DEMO_SITE_ID,
-            p_redirect_uri: redirectUri,
-            p_state: state,
-          });
-          if (error) throw error;
-          sessionStorage.setItem('demo-sso-state', state);
-          window.location.assign(
-            `${AUTHHOP_URL}/authorize?request_id=${encodeURIComponent(data.id)}`
-          );
-          return;
-        }
-
-        // Mock mode: invent a request id and stash details for AuthHop + callback
-        const requestId = `mock-req-${Date.now()}`;
-        const payload = {
-          id: requestId,
-          site_id: DEMO_SITE_ID,
-          redirect_uri: redirectUri,
-          state,
-          status: 'pending',
-          expires_at: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-        };
-        sessionStorage.setItem('demo-sso-state', state);
-        sessionStorage.setItem(`sso-mock-${requestId}`, JSON.stringify(payload));
-        // Also write under AuthHop origin via query — AuthHop reads sessionStorage on its origin,
-        // so pass the mock payload through the query string for cross-origin mock flow.
-        const q = new URLSearchParams({
-          request_id: requestId,
-          mock_site_id: payload.site_id,
-          mock_redirect_uri: payload.redirect_uri,
-          mock_state: payload.state,
+        const { data, error } = await client.rpc('sso_create_request', {
+          p_site_id: DEMO_SITE_ID,
+          p_redirect_uri: redirectUri,
+          p_state: state,
         });
-        window.location.assign(`${AUTHHOP_URL}/authorize?${q.toString()}`);
+        if (error) throw error;
+        sessionStorage.setItem('demo-sso-state', state);
+        window.location.assign(
+          `${AUTHHOP_URL}/authorize?request_id=${encodeURIComponent(data.id)}`
+        );
       } catch (error) {
         this.error = rpcErrorMessage(error);
         this.loading = false;
@@ -202,30 +160,14 @@ export const useDemoUserStore = defineStore('demoUser', {
           throw new Error('Invalid OAuth state');
         }
 
-        if (isSupabaseConfigured && supabase) {
-          const { data, error } = await supabase.rpc('sso_exchange_code', {
-            p_code: code,
-            p_state: state,
-            p_site_id: DEMO_SITE_ID,
-          });
-          if (error) throw error;
-          this.setSession(data.token, data.user);
-          sessionStorage.removeItem('demo-sso-state');
-          return true;
-        }
-
-        // Mock exchange: AuthHop stored the code details in its sessionStorage —
-        // cross-origin we cannot read that. Use code prefix + state to build a session.
-        if (!code?.startsWith('mock-code-')) {
-          throw new Error('Missing AuthHop code (is AuthHop running in mock mode?)');
-        }
-        const user = {
-          id: `demo-via-authhop-${Date.now()}`,
-          email: 'authhop-user@demo.local',
-          display_name: 'AuthHop User',
-          authhop_user_id: 'linked-mock-authhop',
-        };
-        this.setSession(`demo-token-${user.id}`, user);
+        const client = requireSupabase();
+        const { data, error } = await client.rpc('sso_exchange_code', {
+          p_code: code,
+          p_state: state,
+          p_site_id: DEMO_SITE_ID,
+        });
+        if (error) throw error;
+        this.setSession(data.token, data.user);
         sessionStorage.removeItem('demo-sso-state');
         return true;
       } catch (error) {
