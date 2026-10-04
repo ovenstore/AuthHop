@@ -2,8 +2,8 @@
   <section class="page-card">
     <h1 class="section-title">Trusted Devices</h1>
     <p class="subtitle">
-      Enroll the browser you are using now. AuthHop stores a cryptographic key in this browser so later
-      visits and site logins can succeed automatically on this device.
+      Enroll the browser you are using now. AuthHop stores a cryptographic key here so this device can
+      publish external-site sessions and hop them to your other trusted devices.
     </p>
 
     <div class="toolbar">

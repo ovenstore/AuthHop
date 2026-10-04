@@ -3,6 +3,7 @@ import LoginView from '../views/LoginView.vue';
 import RegisterView from '../views/RegisterView.vue';
 import HomeView from '../views/HomeView.vue';
 import CallbackView from '../views/CallbackView.vue';
+import LinkCallbackView from '../views/LinkCallbackView.vue';
 import { useDemoUserStore } from '../stores/user';
 
 const routes = [
@@ -11,6 +12,7 @@ const routes = [
   { path: '/register', component: RegisterView, meta: { guest: true } },
   { path: '/home', component: HomeView, meta: { auth: true } },
   { path: '/auth/callback', component: CallbackView },
+  { path: '/auth/link', component: LinkCallbackView },
 ];
 
 const router = createRouter({

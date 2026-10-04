@@ -1,8 +1,8 @@
 <template>
   <section class="page-card">
-    <h1 class="section-title">Recent Authentications</h1>
+    <h1 class="section-title">Recent Hops</h1>
     <p class="subtitle">
-      Times AuthHop approved or denied sign-in for relying parties, with IP and location.
+      Times AuthHop hopped (or denied) an external-site session onto one of your trusted devices.
     </p>
 
     <div class="toolbar">

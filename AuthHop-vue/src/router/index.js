@@ -2,8 +2,10 @@ import { createRouter, createWebHistory } from 'vue-router';
 import LoginView from '../views/LoginView.vue';
 import RegisterView from '../views/RegisterView.vue';
 import DevicesView from '../views/DevicesView.vue';
+import SessionsView from '../views/SessionsView.vue';
 import AuthHistoryView from '../views/AuthHistoryView.vue';
-import AuthorizeView from '../views/AuthorizeView.vue';
+import HopView from '../views/HopView.vue';
+import LinkDeviceView from '../views/LinkDeviceView.vue';
 import { useUserStore } from '../stores/user';
 
 const routes = [
@@ -11,8 +13,12 @@ const routes = [
   { path: '/login', component: LoginView, meta: { guest: true } },
   { path: '/register', component: RegisterView, meta: { guest: true } },
   { path: '/devices', component: DevicesView, meta: { auth: true } },
+  { path: '/sessions', component: SessionsView, meta: { auth: true } },
   { path: '/history', component: AuthHistoryView, meta: { auth: true } },
-  { path: '/authorize', component: AuthorizeView, meta: { auth: true } },
+  { path: '/hop', component: HopView, meta: { auth: true } },
+  { path: '/link-device', component: LinkDeviceView, meta: { auth: true } },
+  // Legacy SSO path → hop
+  { path: '/authorize', redirect: (to) => ({ path: '/hop', query: to.query }) },
 ];
 
 const router = createRouter({
@@ -47,7 +53,7 @@ router.beforeEach(async (to, from, next) => {
       path: '/login',
       query: {
         redirect: to.fullPath,
-        ...(to.path === '/authorize' ? { sso: '1' } : {}),
+        ...(to.path === '/hop' || to.path === '/link-device' ? { hop: '1' } : {}),
       },
     });
   }

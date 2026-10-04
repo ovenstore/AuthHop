@@ -1,6 +1,8 @@
 /**
- * RPC map for AuthHop. Schema: ~/Code/authhop_schema.sql
- * Device crypto patch: ~/Code/authhop_device_crypto.sql
+ * RPC map for AuthHop.
+ * Schema: ~/Code/authhop_schema.sql
+ * Device crypto: ~/Code/authhop_device_crypto.sql
+ * Session hop: ~/Code/authhop_session_hop.sql
  */
 
 export const RPC = {
@@ -13,6 +15,9 @@ export const RPC = {
   addTrustedDevice: 'authhop_add_trusted_device',
   revokeTrustedDevice: 'authhop_revoke_trusted_device',
   listAuthEvents: 'authhop_list_auth_events',
-  ssoGetRequest: 'sso_get_request',
-  ssoApprove: 'sso_approve',
+  listExternalSessions: 'authhop_list_external_sessions',
+  deviceLinkCreate: 'device_link_create',
+  hopGetRequest: 'hop_get_request',
+  hopListAccounts: 'hop_list_available_accounts',
+  hopApprove: 'hop_approve',
 };

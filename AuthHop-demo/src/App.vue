@@ -5,7 +5,7 @@
         <span class="logo-mark">D</span>
         <div>
           <strong>Demo App</strong>
-          <p>Signs in via AuthHop when the device is trusted</p>
+          <p>Own accounts · hop sessions via AuthHop</p>
         </div>
       </div>
       <div v-if="isAuthenticated" class="topbar-actions">

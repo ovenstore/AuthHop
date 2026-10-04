@@ -2,8 +2,8 @@
   <section class="card">
     <h1>Create demo account</h1>
     <p class="lede">
-      Local demo users live in <code>demo_users</code>. You can also skip this and use
-      Authenticate with AuthHop on the login page.
+      Demo accounts are separate from AuthHop. Create one here with its own password, then link a
+      trusted AuthHop device if you want to hop this session to another browser.
     </p>
 
     <form @submit.prevent="submit">

@@ -1,10 +1,12 @@
 <template>
   <section class="card">
     <h1>Sign in</h1>
-    <p class="lede">Use a local demo account, or authenticate with AuthHop on a trusted device.</p>
+    <p class="lede">
+      Use a local demo account, or continue a session already active on another AuthHop trusted device.
+    </p>
 
     <button class="btn btn-authhop" type="button" :disabled="loading" @click="authHop">
-      <span>Authenticate with AuthHop</span>
+      <span>Continue with AuthHop</span>
     </button>
 
     <div class="divider">or email &amp; password</div>
@@ -53,5 +55,5 @@ const submit = async () => {
   if (ok) goHome();
 };
 
-const authHop = () => userStore.startAuthHopLogin();
+const authHop = () => userStore.startAuthHopContinue();
 </script>

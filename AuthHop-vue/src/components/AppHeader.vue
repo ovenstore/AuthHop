@@ -4,13 +4,14 @@
       <span class="brand-mark">AH</span>
       <div>
         <h1>AuthHop</h1>
-        <p>Trusted-device authentication</p>
+        <p>Session hop across trusted devices</p>
       </div>
     </div>
 
     <nav v-if="isAuthenticated" class="nav-links">
       <router-link to="/devices">Trusted Devices</router-link>
-      <router-link to="/history">Recent Auth</router-link>
+      <router-link to="/sessions">Active Sessions</router-link>
+      <router-link to="/history">Recent Hops</router-link>
     </nav>
 
     <div class="header-actions">
